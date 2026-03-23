@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Tactical Bridge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0?deps=react@18.2.0"
+      }
+    }
+    </script>
+    <style>
+        /* Custom scrollbar for that terminal look */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        body {
+            background-color: #050505;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- React App logic integrated via script -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef, useCallback } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Terminal, Shield, Activity, Zap, Keyboard, Camera, AlertTriangle, Play, Pause, Save, Edit3, MapPin, Search, UploadCloud } from 'lucide-react';
+
+        const OLLAMA_BASE_URL = "http://localhost:8081/ollama/generate"; // Proxied to bypass CORS
+        const CONTROLLER_URL = "http://localhost:8081/action"; // Changed from 8080 to 8081
+        const SMART_MODEL = "qwen3.5:latest"; // Vision/Reasoning capable
+        const FAST_MODEL = "qwen3.5:2b"; // Fast text model
+        const RESIZE_DIM = 512;
+        
+        // --- Kokoro TTS Configuration ---
+        // Change URL to where Kokoro is running (e.g., http://localhost:8880/v1/audio/speech)
+        const KOKORO_TTS_URL = "http://localhost:8880/v1/audio/speech";
+        const KOKORO_VOICE = "af_heart"; // Default voice for Kokoro
+
+        const App = () => {
+          // --- Dynamic Session State (Synchronized to latest scan) ---
+          const [session, setSession] = useState({
+            location: "INITIALIZING...",
+            hp: "0/0",
+            ap: "0/0",
+            level: "0",
+            conditions: "OFFLINE",
+            objectives: "WAITING FOR DATA",
+            customContext: "Please upload Session.xml or connect Game Link."
+          });
+
+          const [chatInput, setChatInput] = useState("");
+          const [isChatting, setIsChatting] = useState(false);
+          const [isEditingSession, setIsEditingSession] = useState(false);
+          const [isLive, setIsLive] = useState(false);
+          const [logs, setLogs] = useState([{ msg: "Bridge v2.5 (Ollama + Kokoro Mode) Active.", type: "system" }]);
+          const [lastAction, setLastAction] = useState([]);
+          const [isAnalyzing, setIsAnalyzing] = useState(false);
+          const fileInputRef = useRef(null);
+
+          const videoRef = useRef(null);
+          const canvasRef = useRef(null);
+          const logEndRef = useRef(null);
+          const analysisTimer = useRef(null);
+          const syncTimer = useRef(null);
+          const isMounted = useRef(true);
+
+          // Set mounted flag
+          useEffect(() => {
+            isMounted.current = true;
+            return () => { isMounted.current = false; };
+          }, []);
+
+          // --- Papyrus Log Sync ---
+          const fetchSessionData = async () => {
+            if (!isLive) return;
+            try {
+              const res = await fetch("http://localhost:8081/session");
+              if (res.ok) {
+                const result = await res.json();
+                if (result.status === "success" && result.data) {
+                  setSession(prev => ({
+                    ...prev,
+                    location: result.data.location || prev.location,
+                    hp: result.data.hp || prev.hp,
+                    ap: result.data.ap || prev.ap,
+                    level: result.data.level || prev.level
+                  }));
+                }
+              }
+            } catch (e) {
+              // Silently fail if server offline or log not ready to prevent console spam
+            }
+          };
+
+          useEffect(() => {
+            if (isLive) {
+              syncTimer.current = setInterval(fetchSessionData, 2000);
+            } else {
+              clearInterval(syncTimer.current);
+            }
+            return () => clearInterval(syncTimer.current);
+          }, [isLive]);
+
+          // --- TTS Implementation ---
+          const speak = async (text) => {
+            try {
+              const response = await fetch(KOKORO_TTS_URL, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  // "Authorization": "Bearer not-needed" // if required
+                },
+                body: JSON.stringify({
+                  model: "kokoro",
+                  input: text,
+                  voice: KOKORO_VOICE,
+                  response_format: "mp3",
+                  speed: 1.2
+                })
+              });
+              
+              if (!response.ok) {
+                console.warn("Kokoro TTS failed, falling back to Web Speech API", response.status);
+                fallbackSpeak(text);
+                return;
+              }
+              
+              const blob = await response.blob();
+              const url = URL.createObjectURL(blob);
+              const audio = new Audio(url);
+              
+              audio.onended = () => URL.revokeObjectURL(url);
+              audio.play().catch(e => {
+                console.error("Audio play blocked", e);
+                fallbackSpeak(text);
+              });
+            } catch (err) {
+              console.warn("Kokoro TTS offline, falling back to Web Speech API", err);
+              fallbackSpeak(text);
+            }
+          };
+
+          const fallbackSpeak = (text) => {
+            if ('speechSynthesis' in window) {
+              const utterance = new SpeechSynthesisUtterance(text);
+              utterance.rate = 1.2;
+              window.speechSynthesis.speak(utterance);
+            }
+          };
+
+          const addLog = (msg, type = "info") => {
+            if (!isMounted.current) return;
+            setLogs(prev => [...prev, { msg, type, time: new Date().toLocaleTimeString() }].slice(-50));
+            // Only speak chat responses, not every tactical button update
+            if (type === "chat") speak(msg);
+          };
+
+          useEffect(() => {
+            logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, [logs]);
+
+          const callOllama = async (base64Image, prompt, model) => {
+            const dynamicContext = `
+              <SessionContext>
+                  <Mode>Survival Mode (Fallout 4)</Mode>
+                  <Level>${session.level}</Level>
+                  <Location>${session.location}</Location>
+                  <Vitals>HP: ${session.hp}, AP: ${session.ap}</Vitals>
+                  <Conditions>${session.conditions}</Conditions>
+                  <Objectives>${session.objectives}</Objectives>
+                  <Note>${session.customContext}</Note>
+              </SessionContext>
+            `;
+
+            const payload = {
+              model: model,
+              prompt: `Tactical co-pilot for Fallout 4. SFA: ${dynamicContext}.
+                       Analyze this image: ${prompt}.
+                       Suggest 1 to 3 immediate tactical actions.
+                       Return ONLY a valid JSON array of short, punchy strings (max 4 words each). Example: ["Press E to Loot", "Take Cover"]`,
+              images: [base64Image],
+              stream: false,
+              format: "json"
+            };
+
+            const response = await fetch(OLLAMA_BASE_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
+            return await response.json();
+          };
+
+          const captureAndAnalyze = useCallback(async () => {
+            if (!isLive || isAnalyzing || !isMounted.current || !videoRef.current) return;
+
+            const video = videoRef.current;
+            if (video.readyState !== 4) return;
+
+            setIsAnalyzing(true);
+            
+            // Create a small canvas for resizing
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = RESIZE_DIM;
+            tempCanvas.height = RESIZE_DIM;
+            const context = tempCanvas.getContext('2d');
+            context.drawImage(video, 0, 0, RESIZE_DIM, RESIZE_DIM);
+            
+            const base64Image = tempCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+
+            try {
+              // Use SMART_MODEL for tactical planning
+              const result = await callOllama(base64Image, "Scan HUD. Priority actions?", SMART_MODEL);
+              const text = result.response || "[]";
+              
+              let actions = [];
+              try {
+                // Remove markdown code blocks if the model wrapped it
+                const cleanText = text.replace(/```json\n?|\n?```/g, "").trim();
+                const parsed = JSON.parse(cleanText);
+                
+                if (Array.isArray(parsed)) {
+                  actions = parsed;
+                } else if (typeof parsed === 'object') {
+                  // If the model returned an object with arrays inside (like PRIORITY_ACTIONS)
+                  const possibleArrays = Object.values(parsed).filter(val => Array.isArray(val));
+                  if (possibleArrays.length > 0) {
+                    // Flatten all arrays found in the object
+                    actions = possibleArrays.flat();
+                  } else {
+                    actions = [cleanText];
+                  }
+                } else {
+                  actions = [cleanText];
+                }
+              } catch(e) {
+                // Fallback: Try to use regex to extract anything that looks like a quoted string in an array
+                const matches = text.match(/"([^"]+)"/g);
+                if (matches && matches.length > 0) {
+                    actions = matches.map(m => m.replace(/"/g, ''));
+                } else {
+                    actions = [text];
+                }
+              }
+
+              if (isMounted.current) {
+                // Ensure actions are strings and slice to max 4 to avoid massive lists
+                const finalActions = actions.map(a => String(a)).slice(0, 4);
+                setLastAction(finalActions);
+                addLog(finalActions.join(" | "), "action");
+              }
+            } catch (err) {
+              addLog("Analysis Error: " + err.message, "error");
+            } finally {
+              if (isMounted.current) setIsAnalyzing(false);
+            }
+          }, [isLive, isAnalyzing, session]);
+
+          const startBridge = async () => {
+            try {
+              const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" }, audio: false });
+              if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                setIsLive(true);
+                addLog("Optical link synchronized.", "success");
+              }
+            } catch (err) {
+              addLog("Link Failed: " + err.message, "error");
+            }
+          };
+
+          const stopBridge = () => {
+            if (videoRef.current?.srcObject) {
+              videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+            }
+            setIsLive(false);
+            addLog("Link terminated.", "system");
+          };
+
+          useEffect(() => {
+            if (isLive) {
+              analysisTimer.current = setInterval(captureAndAnalyze, 5000);
+            } else {
+              clearInterval(analysisTimer.current);
+            }
+            return () => clearInterval(analysisTimer.current);
+          }, [isLive, captureAndAnalyze]);
+
+          const handleFileUpload = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(event.target.result, "text/xml");
+                
+                // Extract data from standard Session XML structure
+                const getVal = (tag) => xmlDoc.getElementsByTagName(tag)[0]?.textContent || "";
+                
+                const newSession = {
+                  location: getVal("Location") || session.location,
+                  hp: getVal("HP") || session.hp,
+                  ap: getVal("AP") || session.ap,
+                  level: getVal("Level") || session.level,
+                  conditions: getVal("Conditions") || session.conditions,
+                  objectives: getVal("Objectives") || session.objectives,
+                  customContext: getVal("Note") || session.customContext
+                };
+                
+                setSession(newSession);
+                addLog(`Session updated from ${file.name}`, "success");
+              } catch (err) {
+                addLog(`Failed to parse XML: ${err.message}`, "error");
+              }
+            };
+            reader.readAsText(file);
+          };
+
+          const sendChatMessage = async (e) => {
+            e.preventDefault();
+            if (!chatInput.trim() || isChatting) return;
+            
+            const userText = chatInput;
+            setChatInput("");
+            addLog(`> ${userText}`, "user");
+            setIsChatting(true);
+            
+            try {
+              const dynamicContext = `
+                <SessionContext>
+                  <Location>${session.location}</Location>
+                  <Vitals>HP: ${session.hp}, AP: ${session.ap}</Vitals>
+                  <Conditions>${session.conditions}</Conditions>
+                  <Objectives>${session.objectives}</Objectives>
+                </SessionContext>
+              `;
+              
+              const payload = {
+                model: FAST_MODEL,
+                prompt: `You are the Tactical AI Co-pilot for Fallout 4. SFA: ${dynamicContext}.
+                         The user says: "${userText}"
+                         Reply briefly (1-2 sentences) like a military AI.`,
+                stream: false
+              };
+              
+              const response = await fetch(OLLAMA_BASE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+              
+              if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
+              const result = await response.json();
+              const reply = result.response || "No signal.";
+              
+              addLog(reply, "chat");
+            } catch (err) {
+              addLog(`Chat Error: ${err.message}`, "error");
+            } finally {
+              setIsChatting(false);
+            }
+          };
+
+          const handleActionClick = async (actionText) => {
+            addLog(`Executing: ${actionText}`, "action");
+            try {
+              const response = await fetch(CONTROLLER_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: actionText })
+              });
+              if (!response.ok) {
+                console.warn("Controller input failed", response.status);
+                addLog("Input ignored/failed", "error");
+              }
+            } catch (err) {
+              console.error("Controller offline", err);
+              addLog("Controller server offline", "error");
+            }
+            
+            // --- SYNC TO ELENAPILLAR2 ---
+            try {
+              // We'll write this action to localStorage so ElenaPillar2 can see it
+              // Since both run on localhost (different ports), they don't natively share localStorage
+              // A better way is to POST this event to an Elena Agent endpoint if she exposes one,
+              // but for now we'll just log that we want to broadcast it.
+              addLog(`[BROADCAST] Sent action to Autonomous Agent`, "system");
+            } catch (err) {
+              console.error("Agent broadcast failed", err);
+            }
+          };
+
+          return (
+            <div className="min-h-screen bg-[#050505] text-emerald-400 font-mono p-4 flex flex-col gap-4 overflow-hidden">
+              {/* HUD Header */}
+              <div className="flex justify-between items-center border-b-2 border-emerald-900 pb-4 shadow-[0_0_15px_rgba(16,185,129,0.1)] shrink-0">
+                <div className="flex items-center gap-4">
+                  <Zap className={isLive ? 'text-yellow-400 animate-pulse' : 'text-neutral-800'} size={24} />
+                  <div>
+                    <h1 className="text-xl font-black tracking-widest uppercase italic leading-none">Gemini Tactical Link</h1>
+                    <p className="text-[10px] opacity-50">SFA_RECOVERY_PROTOCOL_V2.4</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  {!isLive ? (
+                    <button onClick={startBridge} className="bg-emerald-500/10 hover:bg-emerald-500/20 px-6 py-2 border border-emerald-500 rounded flex items-center gap-2 transition-all active:scale-95">
+                      <Play size={16} fill="currentColor" /> SYNC STREAM
+                    </button>
+                  ) : (
+                    <button onClick={stopBridge} className="bg-red-500/10 hover:bg-red-500/20 px-6 py-2 border border-red-500 rounded flex items-center gap-2 transition-all active:scale-95">
+                      <Pause size={16} fill="currentColor" /> CUT LINK
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-grow overflow-hidden">
+                {/* Optical Feed */}
+                <div className="lg:col-span-3 flex flex-col gap-4 min-h-0">
+                  <div className="relative flex-grow bg-black border border-emerald-900 rounded-lg overflow-hidden shadow-inner flex items-center justify-center">
+                    <video ref={videoRef} autoPlay playsInline className="w-full h-full object-contain" />
+                    <canvas ref={canvasRef} className="hidden" />
+
+                    <div className="absolute inset-0 pointer-events-none opacity-20 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%]" />
+
+                    {isAnalyzing && (
+                      <div className="absolute top-6 left-6 flex items-center gap-2 bg-black/80 border border-emerald-500 px-4 py-1 rounded text-xs uppercase tracking-widest z-10">
+                        <Search size={14} className="animate-spin" /> Analyzing Frame
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Callout */}
+                  <div className="bg-emerald-900/5 border-2 border-emerald-500/20 p-8 rounded-lg text-center backdrop-blur-sm relative overflow-hidden shrink-0">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500/20" />
+                    <p className="text-[10px] opacity-40 uppercase tracking-[0.5em] mb-4">Tactical Input Suggestion</p>
+                    <div className="flex flex-wrap justify-center gap-4">
+                      {lastAction.length > 0 ? (
+                        lastAction.map((action, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleActionClick(action)}
+                            className="bg-emerald-900/40 hover:bg-emerald-500/30 text-2xl font-black text-white uppercase tracking-tighter drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] border border-emerald-500/50 px-6 py-3 rounded-lg transition-all active:scale-95"
+                          >
+                            {action}
+                          </button>
+                        ))
+                      ) : (
+                        <h2 className="text-4xl font-black text-white/50 uppercase tracking-tighter">
+                          STANDBY
+                        </h2>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dynamic SFA Sidebar */}
+                <div className="lg:col-span-1 flex flex-col gap-4 h-full min-h-0">
+                  <div className="bg-neutral-900/50 border border-emerald-900 p-5 rounded-lg shrink-0">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                        <MapPin size={14} /> SFA Context
+                      </h3>
+                      <div className="flex gap-2">
+                        <input 
+                          type="file" 
+                          accept=".xml" 
+                          ref={fileInputRef} 
+                          className="hidden" 
+                          onChange={handleFileUpload} 
+                        />
+                        <button onClick={() => fileInputRef.current?.click()} className="p-1 hover:bg-emerald-500/20 rounded transition" title="Upload Session XML">
+                          <UploadCloud size={16} />
+                        </button>
+                        <button onClick={() => setIsEditingSession(!isEditingSession)} className="p-1 hover:bg-emerald-500/20 rounded transition" title="Edit Session">
+                          {isEditingSession ? <Save size={16} /> : <Edit3 size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {isEditingSession ? (
+                      <div className="space-y-4 text-[11px]">
+                        <div className="flex flex-col gap-1">
+                          <label className="opacity-50">LOCATION</label>
+                          <input className="bg-black border border-emerald-800 p-2 rounded text-emerald-300 focus:border-emerald-500 outline-none" value={session.location} onChange={e => setSession({...session, location: e.target.value})} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex flex-col gap-1">
+                            <label className="opacity-50">HP</label>
+                            <input className="bg-black border border-emerald-800 p-2 rounded text-red-400" value={session.hp} onChange={e => setSession({...session, hp: e.target.value})} />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="opacity-50">AP</label>
+                            <input className="bg-black border border-emerald-800 p-2 rounded text-blue-400" value={session.ap} onChange={e => setSession({...session, ap: e.target.value})} />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="opacity-50">OBJECTIVES</label>
+                          <textarea className="bg-black border border-emerald-800 p-2 rounded h-20 text-emerald-300" value={session.objectives} onChange={e => setSession({...session, objectives: e.target.value})} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="pb-3 border-b border-emerald-900/30">
+                          <div className="text-[10px] opacity-40 uppercase">Current Sector</div>
+                          <div className="text-sm font-bold text-white uppercase mt-1">{session.location}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-[10px] opacity-40 uppercase">Vitals</div>
+                            <div className="text-sm font-bold text-red-500">{session.hp} HP</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] opacity-40 uppercase">Action</div>
+                            <div className="text-sm font-bold text-blue-500">{session.ap} AP</div>
+                          </div>
+                        </div>
+                        <div className="p-3 bg-red-950/20 border-l-4 border-red-500 rounded text-[10px] leading-relaxed">
+                          <div className="font-bold mb-1 opacity-60 uppercase">Active Debuffs:</div>
+                          {session.conditions}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* System Console */}
+                  <div className="bg-black border border-emerald-900 flex-grow rounded-lg flex flex-col overflow-hidden">
+                    <div className="bg-emerald-900/10 px-4 py-2 text-[10px] font-bold border-b border-emerald-900 flex justify-between items-center shrink-0">
+                      <span>CONSOLE_OUTPUT</span>
+                      <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                    </div>
+                    <div className="p-3 overflow-y-auto text-[11px] space-y-2 scrollbar-hide flex-grow">
+                      {logs.map((log, i) => (
+                        <div key={i} className={`flex gap-2 ${log.type === 'error' ? 'text-red-500' : log.type === 'action' ? 'text-white' : 'text-emerald-700'}`}>
+                          <span className="opacity-20 shrink-0">[{log.time}]</span>
+                          <span className="break-words uppercase">{log.msg}</span>
+                        </div>
+                      ))}
+                      <div ref={logEndRef} />
+                    </div>
+                    <form onSubmit={sendChatMessage} className="border-t border-emerald-900 bg-emerald-950/20 p-2 flex gap-2 shrink-0">
+                      <input 
+                        type="text" 
+                        value={chatInput} 
+                        onChange={(e) => setChatInput(e.target.value)} 
+                        disabled={isChatting}
+                        placeholder={isChatting ? "TRANSMITTING..." : "Enter tactical query..."} 
+                        className="bg-black border border-emerald-900 rounded p-2 text-xs flex-grow text-emerald-400 focus:border-emerald-500 outline-none disabled:opacity-50"
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={isChatting || !chatInput.trim()}
+                        className="bg-emerald-900/40 hover:bg-emerald-500/30 px-3 rounded text-xs border border-emerald-500/50 disabled:opacity-50 transition-all active:scale-95"
+                      >
+                        SEND
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
