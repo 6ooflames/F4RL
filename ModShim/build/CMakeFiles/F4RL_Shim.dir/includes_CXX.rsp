@@ -1,1 +1,1 @@
--I/mnt/data1/Apps/GamePlayer/ModShim/src -I/mnt/data1/Apps/GamePlayer/f4se_source/f4se_0_06_23/src -I/mnt/data1/Apps/GamePlayer/f4se_source/f4se_0_06_23/src/f4se -I/mnt/data1/Apps/GamePlayer/f4se_source/f4se_0_06_23/src/f4se_common -I/mnt/data1/Apps/GamePlayer/f4se_source/f4se_0_06_23/src/xbyak
+-I/mnt/data1/Apps/F4RL/ModShim/src -I/mnt/data1/Apps/F4RL/ModShim/f4se -I/mnt/data1/Apps/F4RL/ModShim/f4se/f4se -I/mnt/data1/Apps/F4RL/ModShim/f4se/common

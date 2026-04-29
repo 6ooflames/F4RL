@@ -33,6 +33,9 @@ class GameStateStruct(ctypes.Structure):
         # Actions (Agent -> Game)
         ("delta_yaw", ctypes.c_float),
         ("delta_pitch", ctypes.c_float),
+
+        ("lidar_distances", ctypes.c_float * 16),
+
         ("discrete_action", ctypes.c_uint8), # WASD mappings
         ("jump", ctypes.c_bool), # SPACEBAR pressed
         ("click_lmb", ctypes.c_bool),

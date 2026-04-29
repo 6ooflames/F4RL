@@ -9,15 +9,14 @@ PLUGIN_DIR="$GAME_DIR/Data/F4SE/Plugins"
 
 echo "=== Building F4RL_Shim ==="
 mkdir -p $BUILD_DIR
-cd $BUILD_DIR
+cd $BUILD_DIR || exit 1
 
 # Run CMake using the MinGW toolchain
 cmake -DCMAKE_TOOLCHAIN_FILE=../mingw-toolchain.cmake -DCMAKE_BUILD_TYPE=Release ..
 
 # Compile
-make -j$(nproc)
 
-if [ $? -eq 0 ]; then
+if make -j"$(nproc)"; then
     echo "Build successful!"
     # Deploy
     echo "=== Deploying to Fallout 4 ==="

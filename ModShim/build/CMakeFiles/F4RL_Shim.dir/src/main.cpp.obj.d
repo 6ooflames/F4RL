@@ -1,6 +1,6 @@
 CMakeFiles/F4RL_Shim.dir/src/main.cpp.obj: \
- /mnt/data1/Apps/GamePlayer/ModShim/src/main.cpp \
- /mnt/data1/Apps/GamePlayer/ModShim/src/f4se_compat.h \
+ /mnt/data1/Apps/F4RL/ModShim/src/main.cpp \
+ /mnt/data1/Apps/F4RL/ModShim/src/f4se_compat.h \
  /usr/x86_64-w64-mingw32/include/c++/15.2.0/cstdint \
  /usr/x86_64-w64-mingw32/include/c++/15.2.0/x86_64-w64-mingw32/bits/c++config.h \
  /usr/x86_64-w64-mingw32/include/c++/15.2.0/x86_64-w64-mingw32/bits/os_defines.h \
@@ -485,6 +485,6 @@ CMakeFiles/F4RL_Shim.dir/src/main.cpp.obj: \
  /usr/x86_64-w64-mingw32/include/c++/15.2.0/bits/ranges_algobase.h \
  /usr/x86_64-w64-mingw32/include/c++/15.2.0/bits/unicode.h \
  /usr/x86_64-w64-mingw32/include/c++/15.2.0/bits/unicode-data.h \
- /mnt/data1/Apps/GamePlayer/ModShim/src/IPCSerialization.h \
- /mnt/data1/Apps/GamePlayer/ModShim/src/ScanCodesDirectInput.h \
- /mnt/data1/Apps/GamePlayer/f4se_source/f4se_0_06_23/src/f4se/f4se/PluginAPI.h
+ /mnt/data1/Apps/F4RL/ModShim/src/IPCSerialization.h \
+ /mnt/data1/Apps/F4RL/ModShim/src/ScanCodesDirectInput.h \
+ /mnt/data1/Apps/F4RL/ModShim/f4se/f4se/f4se/PluginAPI.h

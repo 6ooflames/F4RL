@@ -16,14 +16,13 @@ add_library(F4RL_Shim SHARED
 )
 
 # Point to the raw F4SE source we extracted
-set(F4SE_DIR "/mnt/data1/Apps/GamePlayer/f4se_source/f4se_0_06_23/src")
+set(F4SE_DIR "f4se")
 
 target_include_directories(F4RL_Shim PRIVATE 
     src
     ${F4SE_DIR}
     ${F4SE_DIR}/f4se
-    ${F4SE_DIR}/f4se_common
-    ${F4SE_DIR}/xbyak
+    ${F4SE_DIR}/common
 )
 
 # MinGW requires linking against standard Windows libraries.

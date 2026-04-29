@@ -1,4 +1,6 @@
-build/
+ModShim/build
+ModShim/f4se
+runs/
 caprica.7z
 ModShim.7z
 env/ipc_schema.py.bak
