@@ -5,7 +5,7 @@ A high-performance, introspective Reinforcement Learning framework for Fallout 4
 ## The Vision: Introspection over Pixels
 Traditional approaches to Reinforcement Learning in complex 3D environments often rely on CNNs or LLMs processing RGB-D (pixel) data. While generalized, these methods are computationally expensive, suffer from high latency, and operate as "black boxes" with no insight into the underlying game state.
 
-**F4RL changes the paradigm.** By leveraging a custom FHDSE plugin (`ModShim`), this project bypasses the need for heavy computer vision. Instead, it accesses the game's internal structured data directly via shared memory. This allows for:
+**F4RL changes the paradigm.** By leveraging a custom F4SE plugin (`ModShim`), this project bypasses the need for heavy computer vision. Instead, it accesses the game's internal structured data directly via shared memory. This allows for:
 * **Near-Zero Latency:** High-frequency training loops synchronized with the engine.
 * **True Introspection:** Direct access to entity positions, health, and game state.
 * **Hardware Efficiency:** Minimal CPU/GPU overhead compared to pixel-based models.
