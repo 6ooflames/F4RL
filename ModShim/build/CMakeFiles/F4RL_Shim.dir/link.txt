@@ -1,0 +1,3 @@
+/usr/bin/cmake -E rm -f CMakeFiles/F4RL_Shim.dir/objects.a
+/usr/bin/x86_64-w64-mingw32-ar qc CMakeFiles/F4RL_Shim.dir/objects.a @CMakeFiles/F4RL_Shim.dir/objects1.rsp
+/usr/bin/x86_64-w64-mingw32-g++ -O3 -DNDEBUG -shared -s -static-libgcc -static-libstdc++ -static -o bin/libF4RL_Shim.dll -Wl,--out-implib,lib/libF4RL_Shim.dll.a -Wl,--major-image-version,0,--minor-image-version,0 -Wl,--whole-archive CMakeFiles/F4RL_Shim.dir/objects.a -Wl,--no-whole-archive @CMakeFiles/F4RL_Shim.dir/linkLibs.rsp

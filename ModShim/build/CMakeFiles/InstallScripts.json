@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/mnt/data1/Apps/GamePlayer/ModShim/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
