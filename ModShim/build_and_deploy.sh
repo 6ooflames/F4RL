@@ -19,13 +19,17 @@ make -j$(nproc)
 
 if [ $? -eq 0 ]; then
     echo "Build successful!"
-    
     # Deploy
     echo "=== Deploying to Fallout 4 ==="
     mkdir -p "$PLUGIN_DIR"
     cp bin/libF4RL_Shim.dll "$PLUGIN_DIR/F4RL_Shim.dll"
     
     echo "Deployed to: $PLUGIN_DIR/F4RL_Shim.dll"
+
+    # Generate pendant ipc_schema.py
+    echo "=== Generating Python IPC Schema==="
+    cd ..
+    python "python generate_schema.py"
 else
     echo "Build failed!"
     exit 1

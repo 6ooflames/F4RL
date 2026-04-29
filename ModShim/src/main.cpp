@@ -238,6 +238,8 @@ void AgentLoop() {
     uintptr_t g_player_ptr = baseAddr + G_PLAYER_OFFSET;
 
     while (g_running) {
+        // Heartbeat — Python can watch this to confirm the loop is alive
+        g_ipcData->frame_counter++;
         if (g_ipcData) {
             // Block during command execution
             if (g_ipcData->execute_command == 1) {
@@ -248,10 +250,51 @@ void AgentLoop() {
                 // Inject the command via keyboard (DirectInput)
                 InjectConsoleCommand(cmd);
 
-                // Sleep the AI loop to ride out the cell transition
-                while (not SAFE_READ(uintptr_t, g_player_ptr, 0)) {
-                    std::this_thread::sleep_for(std::chrono::seconds(0.5));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+
+                // Phase 1: Wait for Player Object and Valid Cell
+                while (true) {
+                    uintptr_t playerObj = SAFE_READ(uintptr_t, g_player_ptr, 0);
+                    if (playerObj) {
+                        uintptr_t parentCell = SAFE_READ(uintptr_t, playerObj + PARENTCELL_OFFSET, 0);
+                        float px = SAFE_READ(float, playerObj + POS_OFFSET, 0.0f);
+
+                        // Ensure cell is valid AND we are not stuck at exactly 0,0,0 (a common transient loading state)
+                        if (parentCell != 0 && px != 0.0f) {
+                            break;
+                        }
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
+
+                // Phase 2: Physics Stability Check (Replaces Entity Heuristic)
+                // When a cell finishes loading, the player drops onto the NavMesh.
+                // We wait until the Z-coordinate stops changing, meaning Havok has settled.
+                float last_z = -99999.0f;
+                int stable_frames = 0;
+
+                while (true) {
+                    uintptr_t playerObj = SAFE_READ(uintptr_t, g_player_ptr, 0);
+                    float current_z = playerObj ? SAFE_READ(float, playerObj + POS_OFFSET + 8, 0.0f) : 0.0f;
+
+                    // If Z hasn't moved more than 0.5 units
+                    if (abs(current_z - last_z) < 0.5f) {
+                        stable_frames++;
+                    } else {
+                        stable_frames = 0; // Reset if we are still falling
+                    }
+
+                    last_z = current_z;
+
+                    // If Z has been stable for 4 consecutive polls (~800ms)
+                    if (stable_frames >= 4) break;
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+
+
+                // Extra safety padding before unleashing the RL Agent
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                 // Tell Python we are done loading
                 g_ipcData->execute_command = 0;
@@ -292,9 +335,6 @@ void AgentLoop() {
 
             // 3. Combat & Interaction Actions
             InjectActionButtons(g_ipcData->click_lmb, g_ipcData->click_rmb, g_ipcData->press_e);
-
-            // Heartbeat — Python can watch this to confirm the loop is alive
-            g_ipcData->frame_counter++;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5)); // ~200Hz
     }

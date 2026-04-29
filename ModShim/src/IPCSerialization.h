@@ -28,6 +28,9 @@ struct GameStateStruct {
     // Actions (Agent -> Game)
     float delta_yaw;
     float delta_pitch;
+
+    float lidar_distances[16];
+
     uint8_t discrete_action; // WASD mappings
     bool jump; // SPACEBAR pressed
     bool click_lmb;

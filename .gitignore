@@ -1,0 +1,5 @@
+build/
+caprica.7z
+ModShim.7z
+env/ipc_schema.py.bak
+env/ipc_schema.py.test
